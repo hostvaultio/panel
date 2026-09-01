@@ -203,7 +203,7 @@ class Permission extends Model
         'activity' => [
             'description' => 'Permissions that control a user\'s access to the server activity logs.',
             'keys' => [
-                'read' => 'Allows a user to view the activity logs for the server.',
+                'read' => 'Allows a user to view their own activity on the server. Only the server owner sees everybody\'s.',
             ],
         ],
     ];

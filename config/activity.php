@@ -8,5 +8,12 @@ return [
     // a part of the server in question will be hidden from the activity logs API response.
     //
     // Activity will still be properly tracked, just not displayed.
-    'hide_admin_activity' => env('APP_ACTIVITY_HIDE_ADMIN', false),
+    //
+    // Hostvault: upstream defaults this to false. We default it to true: our support
+    // staff hold root_admin, and a customer reading their server's activity feed should
+    // see what they and their sub-users did, not our internal support actions. We also
+    // scope the hiding to non-admin viewers (see Api\Client\Servers\ActivityLogController)
+    // so staff can still audit staff. The panel has no admin-side activity view, so a
+    // global hide would leave support actions readable only in the database.
+    'hide_admin_activity' => env('APP_ACTIVITY_HIDE_ADMIN', true),
 ];
