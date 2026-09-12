@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 /**
  * @property int $id
  * @property int $server_id
+ * @property string|null $replaces_backup_uuid
  * @property string $uuid
  * @property bool $is_successful
  * @property bool $is_locked
@@ -66,6 +67,7 @@ class Backup extends Model implements Identifiable
     public static array $validationRules = [
         'server_id' => 'bail|required|numeric|exists:servers,id',
         'uuid' => 'required|uuid',
+        'replaces_backup_uuid' => 'nullable|uuid',
         'is_successful' => 'boolean',
         'is_locked' => 'boolean',
         'name' => 'required|string',
@@ -75,6 +77,14 @@ class Backup extends Model implements Identifiable
         'bytes' => 'numeric',
         'upload_id' => 'nullable|string',
     ];
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo<\Pterodactyl\Models\Backup, $this>
+     */
+    public function replacementTarget(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'replaces_backup_uuid', 'uuid');
+    }
 
     /**
      * @return \Illuminate\Database\Eloquent\Relations\BelongsTo<\Pterodactyl\Models\Server, $this>

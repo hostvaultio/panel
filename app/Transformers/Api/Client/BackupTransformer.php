@@ -15,6 +15,7 @@ class BackupTransformer extends BaseClientTransformer
     {
         return [
             'uuid' => $backup->uuid,
+            'replaces_backup_uuid' => $backup->replaces_backup_uuid,
             'is_successful' => $backup->is_successful,
             'is_locked' => $backup->is_locked,
             'name' => $backup->name,

@@ -1,0 +1,22 @@
+{
+  "date": "2026-09-12",
+  "scope": "Real isolated MySQL schema and panel HTTP/service tests; Wings transport mocked. No live panel deployment or full-quota OVH run.",
+  "php_version": "8.3.33",
+  "phpunit_version": "10.5.63",
+  "mysql_version": "8.4.11",
+  "php_test_image": "sha256:790c3bed2ff7a0df0bac96b44b1b45f775558597cd28eac58b3b1a757bf79b96",
+  "api_tests": 26,
+  "api_assertions": 106,
+  "service_tests": 6,
+  "service_assertions": 21,
+  "style_files_checked": 8,
+  "unknown_dispatch": "A separate SQL connection sees the committed reservation before a forced Wings timeout; retry is refused and the original remains.",
+  "concurrency": "Two independent processes; one winner for both empty-server creation and full-quota replacement.",
+  "cleanup": {
+    "test_containers_removed": true,
+    "internal_network_removed": true,
+    "temporary_source_dependencies_data_credentials_removed": true,
+    "retained_game_running": true,
+    "retained_game_started_at": "2026-09-12T20:16:20.606345309Z"
+  }
+}

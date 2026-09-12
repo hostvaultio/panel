@@ -7,10 +7,12 @@ use Carbon\CarbonImmutable;
 use Webmozart\Assert\Assert;
 use Pterodactyl\Models\Backup;
 use Pterodactyl\Models\Server;
+use Pterodactyl\Facades\Activity;
 use Illuminate\Database\ConnectionInterface;
 use Pterodactyl\Extensions\Backups\BackupManager;
 use Pterodactyl\Repositories\Eloquent\BackupRepository;
 use Pterodactyl\Repositories\Wings\DaemonBackupRepository;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Pterodactyl\Exceptions\Service\Backup\TooManyBackupsException;
 use Symfony\Component\HttpKernel\Exception\TooManyRequestsHttpException;
 
@@ -73,7 +75,32 @@ class InitiateBackupService
      * @throws TooManyBackupsException
      * @throws TooManyRequestsHttpException
      */
-    public function handle(Server $server, ?string $name = null, bool $override = false): Backup
+    public function handle(Server $server, ?string $name = null, bool $override = false, ?string $replaceUuid = null): Backup
+    {
+        if ($replaceUuid !== null && $this->connection->transactionLevel() > 0) {
+            throw new \LogicException('Replacement creation requires its own committed reservation.');
+        }
+
+        // Lock the server itself: locking existing backups cannot serialize the
+        // first backup, and every caller (including scheduled panel tasks) must
+        // share the same quota lock.
+        $backup = $this->connection->transaction(function () use ($server, $name, $override, $replaceUuid) {
+            $server = Server::query()->whereKey($server->id)->lockForUpdate()->firstOrFail();
+
+            return $this->create($server, $name, $override, $replaceUuid);
+        });
+
+        if ($replaceUuid !== null) {
+            // This record and its audit event are committed before contacting
+            // Wings. A timeout cannot erase the identity of an uncertain upload.
+            $this->daemonBackupRepository->setServer($server)
+                ->setBackupAdapter($backup->disk)->backup($backup);
+        }
+
+        return $backup;
+    }
+
+    private function create(Server $server, ?string $name, bool $override, ?string $replaceUuid): Backup
     {
         $limit = config('backups.throttles.limit');
         $period = config('backups.throttles.period');
@@ -86,18 +113,29 @@ class InitiateBackupService
             }
         }
 
-        // Check if the server has reached or exceeded its backup limit.
-        // completed_at == null will cover any ongoing backups, while is_successful == true will cover any completed backups.
         $successful = $this->repository->getNonFailedBackups($server);
-        if (!$server->backup_limit || $successful->count() >= $server->backup_limit) {
-            // Do not allow the user to continue if this server is already at its limit and can't override.
+        $count = $successful->count();
+        // One unresolved replacement at a time, including failed replacements.
+        // Delete the failed candidate to abandon it; never discard its source.
+        if ($server->backups()->whereHas('replacementTarget')->exists()) {
+            throw new ConflictHttpException('Reconcile the existing backup replacement before creating another backup.');
+        }
+
+        if ($replaceUuid !== null) {
+            $target = $server->backups()->where('uuid', $replaceUuid)->first();
+            if ($server->backup_limit <= 0 || $count !== $server->backup_limit
+                || $server->backups()->whereNull('completed_at')->exists()
+                || !$target || $target->is_locked || !$target->is_successful
+                || !$target->completed_at || !$target->bytes || !$target->checksum || $this->isLocked) {
+                throw new ConflictHttpException('A replacement requires a full quota and an unlocked, completed recovery point.');
+            }
+        } elseif (!$server->backup_limit || $count >= $server->backup_limit) {
             if (!$override || $server->backup_limit <= 0) {
                 throw new TooManyBackupsException($server->backup_limit);
             }
 
-            // Get the oldest backup the server has that is not "locked" (indicating a backup that should
-            // never be automatically purged). If we find a backup we will delete it and then continue with
-            // this process. If no backup is found that can be used an exception is thrown.
+            // Preserve the legacy panel-schedule override. The explicit Client
+            // API replacement path above never uses delete-before-create.
             $oldest = $successful->where('is_locked', false)->orderBy('created_at')->first();
             if (!$oldest) {
                 throw new TooManyBackupsException($server->backup_limit);
@@ -106,7 +144,7 @@ class InitiateBackupService
             $this->deleteBackupService->handle($oldest);
         }
 
-        return $this->connection->transaction(function () use ($server, $name) {
+        return $this->connection->transaction(function () use ($server, $name, $replaceUuid) {
             /** @var Backup $backup */
             $backup = $this->repository->create([
                 'server_id' => $server->id,
@@ -115,11 +153,18 @@ class InitiateBackupService
                 'ignored_files' => array_values($this->ignoredFiles),
                 'disk' => $this->backupManager->getDefaultAdapter(),
                 'is_locked' => $this->isLocked,
+                'replaces_backup_uuid' => $replaceUuid,
             ], true, true);
 
-            $this->daemonBackupRepository->setServer($server)
-                ->setBackupAdapter($this->backupManager->getDefaultAdapter())
-                ->backup($backup);
+            if ($replaceUuid === null) {
+                $this->daemonBackupRepository->setServer($server)
+                    ->setBackupAdapter($this->backupManager->getDefaultAdapter())
+                    ->backup($backup);
+            } else {
+                Activity::event('server:backup.start')->subject($backup)->property([
+                    'name' => $backup->name, 'locked' => false, 'replaces' => $replaceUuid,
+                ])->log();
+            }
 
             return $backup;
         });

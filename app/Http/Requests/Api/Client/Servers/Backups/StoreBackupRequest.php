@@ -16,6 +16,7 @@ class StoreBackupRequest extends ClientApiRequest
     {
         return [
             'name' => 'nullable|string|max:191',
+            'replace_uuid' => 'nullable|uuid',
             'is_locked' => 'nullable|boolean',
             'ignored' => 'nullable|string',
         ];
