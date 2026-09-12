@@ -28,11 +28,19 @@ class DeleteBackupService
      *
      * @throws \Throwable
      */
-    public function handle(Backup $backup): void
+    public function handle(Backup $backup, ?string $preserveUuid = null): void
     {
-        $this->connection->transaction(function () use ($backup) {
+        $this->connection->transaction(function () use ($backup, $preserveUuid) {
             Server::query()->whereKey($backup->server_id)->lockForUpdate()->firstOrFail();
             $backup->refresh();
+            if ($preserveUuid !== null) {
+                $preserved = Backup::query()->where('server_id', $backup->server_id)
+                    ->where('uuid', $preserveUuid)->lockForUpdate()->first();
+                if (!$preserved || $preserved->id === $backup->id || !$preserved->is_successful
+                    || !$preserved->completed_at || !$preserved->bytes || !$preserved->checksum) {
+                    throw new ConflictHttpException('The recovery point to preserve must still exist and be complete.');
+                }
+            }
             if ($backup->replaces_backup_uuid && !$backup->completed_at) {
                 throw new ConflictHttpException('Wait for the replacement upload to finish before deleting it.');
             }

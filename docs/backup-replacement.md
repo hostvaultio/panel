@@ -42,7 +42,16 @@ the candidate has successful completion metadata, positive bytes and a checksum.
 S3's existing completion callback commits that metadata only after multipart
 completion succeeds. A source locked after reservation remains protected.
 
-Deleting the successfully replaced source through the usual DELETE endpoint
+Worker deletions must include a preservation precondition:
+`DELETE /api/client/servers/{server}/backups/{uuid}?preserve_uuid={other_uuid}`.
+The other backup must be different, belong to this server, still exist and have
+successful completion metadata, positive bytes and a checksum. This check shares
+the server deletion lock, so a concurrent deletion cannot invalidate an earlier
+list response. A missing/invalid recovery point returns 409; malformed UUIDs return
+422. Source pruning preserves the candidate; candidate abandonment preserves the
+source. Ordinary manual deletes without the condition retain existing semantics.
+
+Deleting the successfully replaced source through this conditional DELETE endpoint
 releases the extra slot. Alternatively, a completed failed candidate can be deleted
 to abandon replacement and preserve the source. An uploading candidate cannot be
 deleted: reconcile its terminal state first. No callback automatically deletes
@@ -88,7 +97,7 @@ These checks prove the API and database rules. They do not replace the live
 full-quota worker/OVH restore gate above.
 
 On 2026-09-12, the [recorded verification](backup-replacement-verification-2026-09-12.json)
-passed 26 HTTP/API tests (106 assertions) and 6 existing backup-service tests
+passed 33 HTTP/API tests (127 assertions) and 6 existing backup-service tests
 (21 assertions) against isolated MySQL 8.4.11 with PHP 8.3.33. Both real two-process
 quota races passed. A separate database connection observed committed replacement
 identity before a forced Wings timeout; retry was refused and the source survived.

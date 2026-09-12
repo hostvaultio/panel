@@ -160,7 +160,8 @@ class BackupController extends ClientApiController
             throw new AuthorizationException();
         }
 
-        $this->deleteBackupService->handle($backup);
+        $validated = $request->validate(['preserve_uuid' => 'sometimes|required|uuid']);
+        $this->deleteBackupService->handle($backup, $validated['preserve_uuid'] ?? null);
 
         Activity::event('server:backup.delete')
             ->subject($backup)

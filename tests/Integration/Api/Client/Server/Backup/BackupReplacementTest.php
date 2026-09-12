@@ -54,6 +54,53 @@ class BackupReplacementTest extends ClientApiIntegrationTestCase
         $this->assertSame(2, $server->backups()->count());
     }
 
+    public function testConditionalDeletionPreservesTheSpecifiedRecoveryPoint(): void
+    {
+        [$user, $server] = $this->generateTestAccount();
+        $source = $this->source($server);
+        $candidate = $this->source($server, ['replaces_backup_uuid' => $source->uuid]);
+        $this->actingAs($user)->deleteJson($this->link($source) . '?preserve_uuid=' . $candidate->uuid)->assertNoContent();
+        $this->assertSoftDeleted($source);
+        $this->deleteJson($this->link($candidate) . '?preserve_uuid=' . $source->uuid)->assertStatus(409);
+        $this->assertNull($candidate->fresh()->deleted_at);
+    }
+
+    public function testRemovedCandidateCannotAuthorizeDeletingTheOriginal(): void
+    {
+        [$user, $server] = $this->generateTestAccount();
+        $source = $this->source($server);
+        $candidate = $this->source($server, ['replaces_backup_uuid' => $source->uuid]);
+        $this->actingAs($user)->deleteJson($this->link($candidate))->assertNoContent();
+        $this->deleteJson($this->link($source) . '?preserve_uuid=' . $candidate->uuid)->assertStatus(409);
+        $this->assertNull($source->fresh()->deleted_at);
+    }
+
+    public function testConditionalDeletionCannotPreserveItselfOrAnotherServersBackup(): void
+    {
+        [$user, $server] = $this->generateTestAccount();
+        $source = $this->source($server);
+        $foreign = $this->source($this->createServerModel());
+        $this->actingAs($user)->deleteJson($this->link($source) . '?preserve_uuid=' . $source->uuid)->assertStatus(409);
+        $this->deleteJson($this->link($source) . '?preserve_uuid=' . $foreign->uuid)->assertStatus(409);
+        $this->deleteJson($this->link($source) . '?preserve_uuid=invalid')->assertStatus(422);
+        $this->assertNull($source->fresh()->deleted_at);
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('incompletePreservedProvider')]
+    public function testConditionalDeletionRequiresCompletePreservedMetadata(array $attributes): void
+    {
+        [$user, $server] = $this->generateTestAccount();
+        $source = $this->source($server);
+        $preserved = $this->source($server, $attributes);
+        $this->actingAs($user)->deleteJson($this->link($source) . '?preserve_uuid=' . $preserved->uuid)->assertStatus(409);
+        $this->assertNull($source->fresh()->deleted_at);
+    }
+
+    public static function incompletePreservedProvider(): array
+    {
+        return [[['is_successful' => false]], [['completed_at' => null]], [['bytes' => 0]], [['checksum' => null]]];
+    }
+
     public function testReplacementAlsoRequiresDeletePermission(): void
     {
         [$user, $server] = $this->generateTestAccount([Permission::ACTION_BACKUP_CREATE]);
