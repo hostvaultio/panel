@@ -5,8 +5,8 @@ Tracking: `platform-hayu` in `hostvaultio/platform`.
 This candidate combines upstream tag `v1.15.1` (`e98678c5a`), the existing
 database-host Application API, and the verified backup replacement protocol from
 panel PR 3. It supersedes PR 3's older-base candidate; do not deploy the two as
-independent releases. The base branch's historical `hostvault/v1.12.4` name does not
-describe the upgraded code's upstream version.
+independent releases. Its target is the new `hostvault/v1.15.1` release branch,
+created from the upstream tag. The existing `hostvault/v1.12.4` branch stays intact.
 
 The database-host API remains necessary for registering co-located MariaDB through
 automation. Upstream v1.15.1 still uses delete-before-create for the built-in backup
@@ -37,9 +37,11 @@ release must never send an upstream release announcement.
 1. Finish the fork CI checks and review the complete candidate against upstream and
    the currently deployed fork. Record the final commit, PHP/runtime requirements,
    built assets and Composer lock hash. Keep application and node identities intact.
-2. Prepare an immutable panel artifact and deployment reference. Current platform
-   bootstrap follows a mutable fork branch; merging this PR changes what a future
-   bootstrap downloads. Coordinate the platform pin before merging or rebuilding.
+2. Prepare an immutable panel artifact and deployment reference. The new release
+   branch is separate from the old branch used by current bootstrap, so merging
+   this PR does not select the upgrade for deployment. Platform PR 797 additionally
+   pins the existing source against future changes to the old branch. Select the
+   upgraded source/assets pair only as part of the coordinated rollout below.
    Do not use the upstream release tarball directly: it lacks the two API contracts.
 3. Rehearse with an isolated database and the dev panel. Verify the installed Wings
    version against this Panel release, then test database-host registration,
