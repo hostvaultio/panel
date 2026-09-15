@@ -4,6 +4,7 @@ use Illuminate\Support\Str;
 use NunoMaduro\Collision\Provider;
 use Illuminate\Contracts\Console\Kernel;
 use Symfony\Component\Console\Output\ConsoleOutput;
+use Illuminate\Foundation\Bootstrap\HandleExceptions;
 
 require __DIR__ . '/../vendor/autoload.php';
 
@@ -43,3 +44,8 @@ if (!env('SKIP_MIGRATIONS')) {
 } else {
     $output->writeln(PHP_EOL . '<comment>Skipping database migrations...</comment>' . PHP_EOL);
 }
+
+// This setup application runs before PHPUnit snapshots the PHP handlers for
+// each test. Release its handlers now; individual tests bootstrap their own
+// application, whose teardown must not remove handlers owned by this bootstrap.
+HandleExceptions::flushState();

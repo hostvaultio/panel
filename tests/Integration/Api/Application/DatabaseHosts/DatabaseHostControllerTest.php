@@ -49,22 +49,25 @@ class DatabaseHostControllerTest extends ApplicationApiIntegrationTestCase
         $this->assertSame($before, DatabaseHost::query()->count());
     }
 
-    public function testReadOnlyKeyCannotCreateOrDeleteHosts(): void
+    #[\PHPUnit\Framework\Attributes\DataProvider('deniedEndpointProvider')]
+    public function testApplicationKeyRequiresDatabaseHostPermission(int $permission, string $method, bool $specificHost): void
     {
         $host = DatabaseHost::factory()->create();
-        $this->createNewDefaultApiKey($this->getApiUser(), ['r_database_hosts' => AdminAcl::READ]);
-        $this->getJson(self::ENDPOINT)->assertOk();
-        $this->postJson(self::ENDPOINT, [])->assertForbidden();
-        $this->deleteJson(self::ENDPOINT . '/' . $host->id)->assertForbidden();
-        $this->assertDatabaseHas('database_hosts', ['id' => $host->id]);
+        $this->createNewDefaultApiKey($this->getApiUser(), ['r_database_hosts' => $permission]);
+        $endpoint = self::ENDPOINT . ($specificHost ? '/' . $host->id : '');
+        // Each denial gets its own fixture: the panel exception handler rolls
+        // back the test transaction, including the host and key it contains.
+        $this->json($method, $endpoint)->assertForbidden();
     }
 
-    public function testKeyWithoutDatabaseHostAccessCannotReadHosts(): void
+    public static function deniedEndpointProvider(): array
     {
-        $host = DatabaseHost::factory()->create();
-        $this->createNewDefaultApiKey($this->getApiUser(), ['r_database_hosts' => 0]);
-        $this->getJson(self::ENDPOINT)->assertForbidden();
-        $this->getJson(self::ENDPOINT . '/' . $host->id)->assertForbidden();
+        return [
+            [AdminAcl::READ, 'POST', false],
+            [AdminAcl::READ, 'DELETE', true],
+            [AdminAcl::NONE, 'GET', false],
+            [AdminAcl::NONE, 'GET', true],
+        ];
     }
 
     public function testUnauthenticatedRequestCannotReadHosts(): void
