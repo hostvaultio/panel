@@ -1,6 +1,9 @@
 name: Hostvault panel contracts
 
 on:
+  push:
+    branches:
+      - 'chore/panel-upstream-*'
   pull_request:
     branches:
       - 'hostvault/**'

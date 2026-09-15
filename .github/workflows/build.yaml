@@ -1,6 +1,9 @@
 name: Build
 
 on:
+  push:
+    branches:
+      - 'chore/panel-upstream-*'
   pull_request:
     branches:
       - "1.0-develop"
