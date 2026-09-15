@@ -4,11 +4,13 @@ namespace Pterodactyl\Services\Backups;
 
 use Illuminate\Http\Response;
 use Pterodactyl\Models\Backup;
+use Pterodactyl\Models\Server;
 use GuzzleHttp\Exception\ClientException;
 use Illuminate\Database\ConnectionInterface;
 use Pterodactyl\Extensions\Backups\BackupManager;
 use Pterodactyl\Repositories\Wings\DaemonBackupRepository;
 use Pterodactyl\Exceptions\Service\Backup\BackupLockedException;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Pterodactyl\Exceptions\Http\Connection\DaemonConnectionException;
 
 class DeleteBackupService
@@ -26,7 +28,34 @@ class DeleteBackupService
      *
      * @throws \Throwable
      */
-    public function handle(Backup $backup): void
+    public function handle(Backup $backup, ?string $preserveUuid = null): void
+    {
+        $this->connection->transaction(function () use ($backup, $preserveUuid) {
+            Server::query()->whereKey($backup->server_id)->lockForUpdate()->firstOrFail();
+            $backup->refresh();
+            if ($preserveUuid !== null) {
+                $preserved = Backup::query()->where('server_id', $backup->server_id)
+                    ->where('uuid', $preserveUuid)->lockForUpdate()->first();
+                if (!$preserved || $preserved->id === $backup->id || !$preserved->is_successful
+                    || !$preserved->completed_at || !$preserved->bytes || !$preserved->checksum) {
+                    throw new ConflictHttpException('The recovery point to preserve must still exist and be complete.');
+                }
+            }
+            if ($backup->replaces_backup_uuid && !$backup->completed_at) {
+                throw new ConflictHttpException('Wait for the replacement upload to finish before deleting it.');
+            }
+            $replacement = Backup::query()->where('server_id', $backup->server_id)
+                ->where('replaces_backup_uuid', $backup->uuid)->lockForUpdate()->first();
+            if ($replacement && (!$replacement->is_successful || !$replacement->completed_at
+                || !$replacement->bytes || !$replacement->checksum)) {
+                throw new ConflictHttpException('The replacement must complete successfully before deleting this recovery point.');
+            }
+
+            $this->delete($backup);
+        });
+    }
+
+    private function delete(Backup $backup): void
     {
         // If the backup is marked as failed it can still be deleted, even if locked
         // since the UI doesn't allow you to unlock a failed backup in the first place.

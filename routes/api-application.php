@@ -69,6 +69,23 @@ Route::group(['prefix' => '/locations'], function () {
 
 /*
 |--------------------------------------------------------------------------
+| Database Host Controller Routes
+|--------------------------------------------------------------------------
+|
+| Endpoint: /api/application/database-hosts
+|
+*/
+Route::group(['prefix' => '/database-hosts'], function () {
+    Route::get('/', [Application\DatabaseHosts\DatabaseHostController::class, 'index'])->name('api.application.database_hosts');
+    Route::get('/{databaseHost:id}', [Application\DatabaseHosts\DatabaseHostController::class, 'view'])->name('api.application.database_hosts.view');
+
+    Route::post('/', [Application\DatabaseHosts\DatabaseHostController::class, 'store']);
+
+    Route::delete('/{databaseHost:id}', [Application\DatabaseHosts\DatabaseHostController::class, 'delete']);
+});
+
+/*
+|--------------------------------------------------------------------------
 | Server Controller Routes
 |--------------------------------------------------------------------------
 |

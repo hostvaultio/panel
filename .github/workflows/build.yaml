@@ -1,9 +1,17 @@
 name: Build
 
 on:
+  push:
+    branches:
+      - 'chore/panel-upstream-*'
   pull_request:
     branches:
       - "1.0-develop"
+      - "hostvault/**"
+
+concurrency:
+  group: panel-ui-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   ui:
@@ -18,6 +26,8 @@ jobs:
     steps:
       - name: Code Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -30,3 +40,48 @@ jobs:
       - run: yarn tsc
       - run: yarn lint
       - run: yarn build:production
+      - name: Setup production PHP dependencies
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: bcmath, curl, gd, mbstring, pdo_mysql, pcntl, posix, xml, zip
+          tools: composer:v2
+          coverage: none
+      - name: Install locked production dependencies
+        run: |
+          composer install --no-dev --no-scripts --no-interaction --no-progress --prefer-dist --optimize-autoloader
+          composer check-platform-reqs --no-dev
+      - name: Package reviewed source and built assets
+        run: bash scripts/package-hostvault-panel.sh "$RUNNER_TEMP/panel-artifact"
+      - name: Verify extracted deployment candidate
+        env:
+          APP_ENV: production
+          APP_ENVIRONMENT_ONLY: 'true'
+          CACHE_STORE: array
+          SESSION_DRIVER: array
+          QUEUE_CONNECTION: sync
+        run: |
+          mkdir "$RUNNER_TEMP/panel-smoke"
+          cd "$RUNNER_TEMP/panel-artifact"
+          sha256sum --check SHA256SUMS
+          tar -xzf panel-*.tar.gz -C "$RUNNER_TEMP/panel-smoke"
+          cd "$RUNNER_TEMP/panel-smoke"
+          sha256sum --check --quiet SHA256SUMS
+          test ! -e .env && test ! -e .env.ci && test ! -d node_modules && test ! -d .git
+          export APP_KEY="base64:$(php -r 'echo base64_encode(random_bytes(32));')"
+          php artisan package:discover --ansi
+          php artisan --version
+          php artisan route:list --path=api/application/database-hosts --json > "$RUNNER_TEMP/panel-database-routes.json"
+          python3 - "$RUNNER_TEMP/panel-database-routes.json" <<'PY'
+          import json, sys
+          routes = json.load(open(sys.argv[1]))
+          methods = {method for route in routes for method in route['method'].split('|')}
+          assert {'GET', 'POST', 'DELETE'} <= methods, methods
+          PY
+      - name: Retain deployment candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: hostvault-panel-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/panel-artifact/
+          if-no-files-found: error
+          retention-days: 30

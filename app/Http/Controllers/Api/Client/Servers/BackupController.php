@@ -66,6 +66,10 @@ class BackupController extends ClientApiController
      */
     public function store(StoreBackupRequest $request, Server $server): array
     {
+        if ($request->filled('replace_uuid') && !$request->user()->can(Permission::ACTION_BACKUP_DELETE, $server)) {
+            throw new AuthorizationException();
+        }
+
         $action = $this->initiateBackupService
             ->setIgnoredFiles(explode(PHP_EOL, $request->input('ignored') ?? ''));
 
@@ -77,18 +81,23 @@ class BackupController extends ClientApiController
             $action->setIsLocked($request->boolean('is_locked'));
         }
 
-        $backup = Activity::event('server:backup.start')->transaction(function ($log) use ($action, $server, $request) {
-            $server->backups()->lockForUpdate()->count();
+        if ($request->filled('replace_uuid')) {
+            // The service commits replacement identity and its audit event
+            // before dispatch; do not wrap its Wings request in a transaction.
+            $backup = $action->handle($server, $request->input('name'), false, $request->input('replace_uuid'));
+        } else {
+            $backup = Activity::event('server:backup.start')->transaction(function ($log) use ($action, $server, $request) {
+                $backup = $action->handle($server, $request->input('name'));
 
-            $backup = $action->handle($server, $request->input('name'));
+                $log->subject($backup)->property([
+                    'name' => $backup->name,
+                    'locked' => $request->boolean('is_locked'),
+                    'replaces' => $backup->replaces_backup_uuid,
+                ]);
 
-            $log->subject($backup)->property([
-                'name' => $backup->name,
-                'locked' => $request->boolean('is_locked'),
-            ]);
-
-            return $backup;
-        });
+                return $backup;
+            });
+        }
 
         return $this->fractal->item($backup)
             ->transformWith($this->getTransformer(BackupTransformer::class))
@@ -107,9 +116,14 @@ class BackupController extends ClientApiController
             throw new AuthorizationException();
         }
 
-        $action = $backup->is_locked ? 'server:backup.unlock' : 'server:backup.lock';
+        $action = $backup->getConnection()->transaction(function () use ($server, $backup) {
+            Server::query()->whereKey($server->id)->lockForUpdate()->firstOrFail();
+            $backup->refresh();
+            $action = $backup->is_locked ? 'server:backup.unlock' : 'server:backup.lock';
+            $backup->update(['is_locked' => !$backup->is_locked]);
 
-        $backup->update(['is_locked' => !$backup->is_locked]);
+            return $action;
+        });
 
         Activity::event($action)->subject($backup)->property('name', $backup->name)->log();
 
@@ -146,7 +160,8 @@ class BackupController extends ClientApiController
             throw new AuthorizationException();
         }
 
-        $this->deleteBackupService->handle($backup);
+        $validated = $request->validate(['preserve_uuid' => 'sometimes|required|uuid']);
+        $this->deleteBackupService->handle($backup, $validated['preserve_uuid'] ?? null);
 
         Activity::event('server:backup.delete')
             ->subject($backup)
