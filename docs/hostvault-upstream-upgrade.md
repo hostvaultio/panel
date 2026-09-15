@@ -32,6 +32,27 @@ base and must not be presented as validation of this upgrade.
 Upstream's CDN dispatch is restricted to the upstream repository; a Hostvault
 release must never send an upstream release announcement.
 
+## Deployment artifact
+
+The Build workflow checks out the exact candidate commit, compiles its frontend,
+and installs production PHP dependencies from `composer.lock` with scripts
+disabled. `scripts/package-hostvault-panel.sh` assembles tracked runtime files,
+built assets and the production vendor tree. It stamps the upstream version as
+1.15.1 and records the fork commit and lock/asset-manifest hashes in
+`hostvault-release.json`. Archive and file checksums accompany the bundle.
+Runtime `.env`, test configuration, logs, Git metadata and Node dependencies are
+excluded. CI extracts the bundle, verifies hashes, boots Artisan using isolated
+settings and checks the database-host routes before retaining it for 30 days.
+
+Select `hostvault-panel-<commit>` from a successful Build run only after both PHP
+contract jobs for that same commit pass. Record the run, artifact ID and archive
+SHA-256; preserve that exact bundle in the approved release store before expiry.
+Do not rebuild between dev acceptance and production promotion. Packaging and
+CLI boot checks do not prove a deployed database migration or Wings compatibility.
+On the target, verify PHP extension requirements with `composer check-platform-reqs
+--no-dev`, preserve the existing `.env` and mutable storage, regenerate package
+discovery/caches for that environment, and follow the coordinated rollout below.
+
 ## Deployment gates
 
 1. Finish the fork CI checks and review the complete candidate against upstream and

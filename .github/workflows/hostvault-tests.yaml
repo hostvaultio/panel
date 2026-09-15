@@ -39,6 +39,8 @@ jobs:
           --health-retries=30
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
