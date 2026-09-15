@@ -9,6 +9,10 @@ on:
       - "1.0-develop"
       - "hostvault/**"
 
+concurrency:
+  group: panel-ui-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   ui:
     name: UI

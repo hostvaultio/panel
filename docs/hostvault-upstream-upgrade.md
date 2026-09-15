@@ -15,8 +15,8 @@ override, so it does not replace our source-preserving replacement contract. See
 
 ## Validation boundary
 
-The fork now runs PR checks targeting `hostvault/**`: PHP 8.3 with isolated MySQL
-8.4, PHP style, the upstream unit/integration suites, custom database-host HTTP
+The fork now runs PR checks targeting `hostvault/**`: PHP 8.2 and 8.3 with isolated MySQL
+8.4.9, PHP style, the upstream unit/integration suites, custom database-host HTTP
 tests, and backup replacement tests including independent-process races. The
 upstream UI checks also run on these branches with Node 22. CI has read-only
 repository access and no production credentials. Its fixed database password is
