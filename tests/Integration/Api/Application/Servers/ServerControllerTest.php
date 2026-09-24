@@ -26,19 +26,21 @@ class ServerControllerTest extends ApplicationApiIntegrationTestCase
         $this->assertSame(5, $server->subuser_limit);
     }
 
-    public function testFeatureUpdateStillValidatesProvidedHardware(): void
+    #[\PHPUnit\Framework\Attributes\DataProvider('invalidHardwareDataProvider')]
+    public function testFeatureUpdateStillValidatesProvidedHardware(array $hardware): void
     {
         $server = $this->createServerModel();
         $payload = [
             'allocation' => $server->allocation_id,
             'feature_limits' => ['databases' => 2, 'backups' => 3, 'allocations' => 2, 'subusers' => 5],
         ];
-        $this->patchJson('/api/application/servers/' . $server->id . '/build', array_merge($payload, [
-            'memory' => -1,
-        ]))->assertUnprocessable();
-        $this->patchJson('/api/application/servers/' . $server->id . '/build', array_merge($payload, [
-            'limits' => ['memory' => 4096],
-        ]))->assertUnprocessable();
+        $this->patchJson('/api/application/servers/' . $server->id . '/build', array_merge($payload, $hardware))
+            ->assertUnprocessable();
+    }
+
+    public static function invalidHardwareDataProvider(): array
+    {
+        return [[['memory' => -1]], [['limits' => ['memory' => 4096]]]];
     }
 
     /**
