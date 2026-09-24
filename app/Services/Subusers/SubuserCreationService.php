@@ -10,6 +10,7 @@ use Pterodactyl\Services\Users\UserCreationService;
 use Pterodactyl\Repositories\Eloquent\SubuserRepository;
 use Pterodactyl\Contracts\Repository\UserRepositoryInterface;
 use Pterodactyl\Exceptions\Repository\RecordNotFoundException;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Pterodactyl\Exceptions\Service\Subuser\UserIsServerOwnerException;
 use Pterodactyl\Exceptions\Service\Subuser\ServerSubuserExistsException;
 
@@ -39,6 +40,13 @@ class SubuserCreationService
     public function handle(Server $server, string $email, array $permissions): Subuser
     {
         return $this->connection->transaction(function () use ($server, $email, $permissions) {
+            // Serialize the first invitation as well as subsequent ones. Check
+            // before creating an account or dispatching any invitation email.
+            $server = Server::query()->whereKey($server->id)->lockForUpdate()->firstOrFail();
+            if ($server->subuser_limit !== null && $server->subusers()->lockForUpdate()->count() >= $server->subuser_limit) {
+                throw new ConflictHttpException('This server has reached its sub-user limit.');
+            }
+
             try {
                 $user = $this->userRepository->findFirstWhere([['email', '=', $email]]);
 

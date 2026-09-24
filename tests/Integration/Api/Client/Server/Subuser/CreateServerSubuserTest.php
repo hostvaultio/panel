@@ -14,6 +14,52 @@ class CreateServerSubuserTest extends ClientApiIntegrationTestCase
 {
     use WithFaker;
 
+    public function testLimitRejectsInvitationWithoutCreatingAnAccount(): void
+    {
+        [$user, $server] = $this->generateTestAccount();
+        $server->update(['subuser_limit' => 0]);
+        $email = $this->faker->unique()->safeEmail;
+
+        $this->actingAs($user)->postJson($this->link($server) . '/users', [
+            'email' => $email,
+            'permissions' => [Permission::ACTION_CONTROL_START],
+        ])->assertStatus(409);
+
+        $this->assertDatabaseMissing('users', ['email' => $email]);
+        $this->assertSame(0, $server->subusers()->count());
+    }
+
+    public function testInvitationUsesRemainingSlotsAndCountsExistingMemberships(): void
+    {
+        [$user, $server] = $this->generateTestAccount();
+        $server->update(['subuser_limit' => 1]);
+
+        $this->actingAs($user)->postJson($this->link($server) . '/users', [
+            'email' => $this->faker->unique()->safeEmail,
+            'permissions' => [Permission::ACTION_CONTROL_START],
+        ])->assertOk();
+
+        $this->actingAs($user)->postJson($this->link($server) . '/users', [
+            'email' => $this->faker->unique()->safeEmail,
+            'permissions' => [Permission::ACTION_CONTROL_START],
+        ])->assertStatus(409);
+
+        $this->assertSame(1, $server->subusers()->count());
+    }
+
+    public function testDelegatedInviterUsesTheSameServerLimit(): void
+    {
+        [$user, $server] = $this->generateTestAccount([Permission::ACTION_USER_CREATE]);
+        $server->update(['subuser_limit' => 1]);
+
+        $this->actingAs($user)->postJson($this->link($server) . '/users', [
+            'email' => $this->faker->unique()->safeEmail,
+            'permissions' => [Permission::ACTION_USER_CREATE],
+        ])->assertStatus(409);
+
+        $this->assertSame(1, $server->subusers()->count());
+    }
+
     /**
      * Test that a subuser can be created for a server.
      */

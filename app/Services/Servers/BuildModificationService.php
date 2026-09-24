@@ -34,6 +34,8 @@ class BuildModificationService
     {
         /** @var Server $server */
         $server = $this->connection->transaction(function () use ($server, $data) {
+            $server = Server::query()->whereKey($server->id)->lockForUpdate()->firstOrFail();
+
             $this->processAllocations($server, $data);
 
             if (isset($data['allocation_id']) && $data['allocation_id'] != $server->allocation_id) {
@@ -52,6 +54,7 @@ class BuildModificationService
                 'database_limit' => Arr::get($data, 'database_limit', 0) ?? null,
                 'allocation_limit' => Arr::get($data, 'allocation_limit', 0) ?? null,
                 'backup_limit' => Arr::get($data, 'backup_limit', 0) ?? 0,
+                'subuser_limit' => Arr::get($data, 'subuser_limit', $server->subuser_limit),
             ]))->saveOrFail();
 
             return $server->refresh();

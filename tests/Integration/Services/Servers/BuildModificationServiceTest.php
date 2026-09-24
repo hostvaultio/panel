@@ -28,6 +28,21 @@ class BuildModificationServiceTest extends IntegrationTestCase
         $this->daemonServerRepository = $this->mock(DaemonServerRepository::class);
     }
 
+    public function testSubuserLimitCanBeChangedAndIsPreservedWhenOmitted(): void
+    {
+        $server = $this->createServerModel(['subuser_limit' => 3]);
+        $this->daemonServerRepository->shouldReceive('setServer->sync')->andReturnUndefined();
+
+        $updated = $this->getService()->handle($server, ['subuser_limit' => 5]);
+        $this->assertSame(5, $updated->subuser_limit);
+        $updated = $this->getService()->handle($server, ['memory' => 512]);
+        $this->assertSame(5, $updated->subuser_limit);
+        $updated = $this->getService()->handle($server, ['subuser_limit' => 0]);
+        $this->assertSame(0, $updated->subuser_limit);
+        $updated = $this->getService()->handle($server, ['subuser_limit' => null]);
+        $this->assertNull($updated->subuser_limit);
+    }
+
     /**
      * Test that allocations can be added and removed from a server. Only the allocations on the
      * current node and belonging to this server should be modified.
