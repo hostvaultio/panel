@@ -64,7 +64,16 @@ class DatabaseManagementServiceTest extends IntegrationTestCase
 
         $this->expectException(TooManyDatabasesException::class);
 
-        $this->getService()->create($server, []);
+        $this->getService()->create($server, ['database' => 's' . $server->id . '_extra']);
+    }
+
+    public function testLimitIsReloadedInsideTheCreationTransaction(): void
+    {
+        $server = $this->createServerModel(['database_limit' => 5]);
+        $server->newQuery()->whereKey($server->id)->update(['database_limit' => 0]);
+
+        $this->expectException(TooManyDatabasesException::class);
+        $this->getService()->create($server, ['database' => 's' . $server->id . '_extra']);
     }
 
     /**

@@ -74,14 +74,6 @@ class DatabaseManagementService
             throw new DatabaseClientFeatureNotEnabledException();
         }
 
-        if ($this->validateDatabaseLimit) {
-            // If the server has a limit assigned and we've already reached that limit, throw back
-            // an exception and kill the process.
-            if (!is_null($server->database_limit) && $server->databases()->count() >= $server->database_limit) {
-                throw new TooManyDatabasesException();
-            }
-        }
-
         // Protect against developer mistakes...
         if (empty($data['database']) || !preg_match(self::MATCH_NAME_REGEX, $data['database'])) {
             throw new \InvalidArgumentException('The database name passed to DatabaseManagementService::handle MUST be prefixed with "s{server_id}_".');
@@ -98,7 +90,13 @@ class DatabaseManagementService
         $database = null;
 
         try {
-            return $this->connection->transaction(function () use ($data, &$database) {
+            return $this->connection->transaction(function () use ($server, $data, &$database) {
+                $server = Server::query()->whereKey($server->id)->lockForUpdate()->firstOrFail();
+                if ($this->validateDatabaseLimit && $server->database_limit !== null
+                    && $server->databases()->lockForUpdate()->count() >= $server->database_limit) {
+                    throw new TooManyDatabasesException();
+                }
+
                 $database = $this->createModel($data);
 
                 $this->dynamic->set('dynamic', $data['database_host_id']);

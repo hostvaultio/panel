@@ -46,6 +46,7 @@ class UpdateServerBuildConfigurationRequest extends ServerWriteRequest
             'feature_limits.databases' => $rules['database_limit'],
             'feature_limits.allocations' => $rules['allocation_limit'],
             'feature_limits.backups' => $rules['backup_limit'],
+            'feature_limits.subusers' => 'sometimes|nullable|integer|min:0',
         ];
     }
 
@@ -60,6 +61,9 @@ class UpdateServerBuildConfigurationRequest extends ServerWriteRequest
         $data['database_limit'] = $data['feature_limits']['databases'] ?? null;
         $data['allocation_limit'] = $data['feature_limits']['allocations'] ?? null;
         $data['backup_limit'] = $data['feature_limits']['backups'] ?? null;
+        if (array_key_exists('subusers', $data['feature_limits'])) {
+            $data['subuser_limit'] = $data['feature_limits']['subusers'];
+        }
         unset($data['allocation'], $data['feature_limits']);
 
         // Adjust the limits field to match what is expected by the model.
