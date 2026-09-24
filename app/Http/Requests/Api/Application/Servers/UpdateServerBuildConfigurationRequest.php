@@ -95,9 +95,9 @@ class UpdateServerBuildConfigurationRequest extends ServerWriteRequest
     }
 
     /**
-     * Converts existing rules for certain limits into a format that maintains backwards
-     * compatability with the old API endpoint while also supporting a more correct API
-     * call.
+     * Keep validation for hardware values that are provided while allowing a
+     * feature-only PATCH to preserve the current hardware configuration. A
+     * supplied limits object still requires its complete hardware fields.
      *
      * @see https://github.com/pterodactyl/panel/issues/1500
      */
@@ -111,7 +111,7 @@ class UpdateServerBuildConfigurationRequest extends ServerWriteRequest
             ->filter(function ($value) {
                 return $value !== 'required';
             })
-            ->prepend($limits ? 'required_with:limits' : 'required_without:limits')
+            ->prepend($limits ? 'required_with:limits' : 'sometimes')
             ->toArray();
     }
 }
