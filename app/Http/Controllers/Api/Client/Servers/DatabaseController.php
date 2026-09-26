@@ -50,6 +50,9 @@ class DatabaseController extends ClientApiController
     public function store(StoreDatabaseRequest $request, Server $server): array
     {
         $database = Activity::event('server:database.create')->transaction(function ($log) use ($request, $server) {
+            // Use the service's parent-first lock order before locking database rows.
+            // Child-first locking can deadlock concurrent first-database requests.
+            $server = Server::query()->whereKey($server->id)->lockForUpdate()->firstOrFail();
             if ($server->databases()->lockForUpdate()->count() >= $server->database_limit) {
                 throw new DisplayException('Cannot create additional databases on this server: limit has been reached.');
             }
