@@ -68,7 +68,7 @@ class DatabaseManagementService
      * @throws TooManyDatabasesException
      * @throws DatabaseClientFeatureNotEnabledException
      */
-    public function create(Server $server, array $data): Database
+    public function create(Server $server, array $data, ?\Closure $authorize = null): Database
     {
         if (!config('pterodactyl.client_features.databases.enabled')) {
             throw new DatabaseClientFeatureNotEnabledException();
@@ -90,8 +90,11 @@ class DatabaseManagementService
         $database = null;
 
         try {
-            return $this->connection->transaction(function () use ($server, $data, &$database) {
+            return $this->connection->transaction(function () use ($server, $data, &$database, $authorize) {
                 $server = Server::query()->whereKey($server->id)->lockForUpdate()->firstOrFail();
+                if ($authorize !== null) {
+                    $authorize($server);
+                }
                 if ($this->validateDatabaseLimit && $server->database_limit !== null
                     && $server->databases()->lockForUpdate()->count() >= $server->database_limit) {
                     throw new TooManyDatabasesException();
