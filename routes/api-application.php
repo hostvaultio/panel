@@ -20,6 +20,7 @@ Route::group(['prefix' => '/users'], function () {
     Route::post('/', [Application\Users\UserController::class, 'store']);
     Route::patch('/{user:id}', [Application\Users\UserController::class, 'update']);
 
+    Route::delete('/{user:id}/invited-account', [Application\Users\InvitedAccountController::class, 'delete']);
     Route::delete('/{user:id}', [Application\Users\UserController::class, 'delete']);
 });
 
@@ -108,6 +109,13 @@ Route::group(['prefix' => '/servers'], function () {
 
     Route::delete('/{server:id}', [Application\Servers\ServerController::class, 'delete']);
     Route::delete('/{server:id}/{force?}', [Application\Servers\ServerController::class, 'delete']);
+
+    // Actor-scoped platform requests: keep separate from privileged operator routes.
+    Route::group(['prefix' => '/{server:id}/authorized-databases'], function () {
+        Route::get('/', [Application\Servers\AuthorizedDatabaseController::class, 'index']);
+        Route::post('/', [Application\Servers\AuthorizedDatabaseController::class, 'store']);
+        Route::delete('/{database:id}', [Application\Servers\AuthorizedDatabaseController::class, 'delete']);
+    });
 
     // Database Management Endpoint
     Route::group(['prefix' => '/{server:id}/databases'], function () {
