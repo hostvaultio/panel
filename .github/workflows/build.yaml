@@ -47,6 +47,8 @@ jobs:
           extensions: bcmath, curl, gd, mbstring, pdo_mysql, pcntl, posix, xml, zip
           tools: composer:v2
           coverage: none
+      - name: Enforce patched PHP before packaging
+        run: sh scripts/check-php-runtime.sh 8.2
       - name: Install locked production dependencies
         run: |
           composer install --no-dev --no-scripts --no-interaction --no-progress --prefer-dist --optimize-autoloader

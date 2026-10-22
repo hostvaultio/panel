@@ -47,6 +47,10 @@ jobs:
           extensions: bcmath, curl, gd, mbstring, pdo_mysql, pcntl, posix, xml, zip
           tools: composer:v2
           coverage: none
+      - name: Enforce patched PHP before Composer and tests
+        run: |
+          python3 scripts/tests/test_php_runtime_guard.py
+          sh scripts/check-php-runtime.sh '${{ matrix.php }}'
       - name: Configure isolated test environment
         run: cp .env.ci .env
       - name: Install locked dependencies
