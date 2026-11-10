@@ -213,54 +213,72 @@ class ServerDeletionServiceTest extends IntegrationTestCase
      * object is deleted, so its parts are not left in the bucket. That holds for an upload
      * still running and for one the stale-backup pruner already marked as failed.
      */
-    public function testUnfinishedUploadIsAbortedWithTheServer()
+    #[\PHPUnit\Framework\Attributes\DataProvider('unfinishedUploadDataProvider')]
+    public function testUnfinishedUploadIsAbortedWithTheServer(bool $markedFailed)
     {
-        foreach ([null, CarbonImmutable::now()] as $completedAt) {
-            $server = $this->createServerModel();
-            $backup = $this->createUnfinishedUpload($server->id, $completedAt);
-            $object = ['Bucket' => 'foobar', 'Key' => sprintf('%s/%s.tar.gz', $server->uuid, $backup->uuid)];
+        $server = $this->createServerModel();
+        $backup = $this->createUnfinishedUpload($server->id, $markedFailed ? CarbonImmutable::now() : null);
+        $object = ['Bucket' => 'foobar', 'Key' => sprintf('%s/%s.tar.gz', $server->uuid, $backup->uuid)];
 
-            $this->daemonServerRepository->expects('setServer->delete')->withNoArgs()->andReturnUndefined();
+        $this->daemonServerRepository->expects('setServer->delete')->withNoArgs()->andReturnUndefined();
 
-            $adapter = $this->mockObjectStorage();
-            $adapter->expects('getClient->abortMultipartUpload')->with($object + ['UploadId' => 'upload-123'])->ordered();
-            $adapter->expects('getClient->deleteObject')->with($object)->ordered();
+        $adapter = $this->mockObjectStorage();
+        $adapter->expects('getClient->abortMultipartUpload')->with($object + ['UploadId' => 'upload-123'])->ordered();
+        $adapter->expects('getClient->deleteObject')->with($object)->ordered();
 
-            $this->getService()->handle($server);
+        $this->getService()->handle($server);
 
-            $this->assertDatabaseMissing('servers', ['id' => $server->id]);
-            $this->assertDatabaseMissing('backups', ['id' => $backup->id]);
-        }
+        $this->assertDatabaseMissing('servers', ['id' => $server->id]);
+        $this->assertDatabaseMissing('backups', ['id' => $backup->id]);
+    }
+
+    public static function unfinishedUploadDataProvider(): array
+    {
+        return [
+            'upload still running' => [false],
+            'marked as failed by the pruner' => [true],
+        ];
     }
 
     /**
      * Test that an upload that can no longer be aborted does not block the deletion, whether
      * object storage answers that the upload is gone or fails in some other way.
      */
-    public function testFailedUploadAbortDoesNotStopTheDeletion()
+    #[\PHPUnit\Framework\Attributes\DataProvider('abortFailureDataProvider')]
+    public function testFailedUploadAbortDoesNotStopTheDeletion(bool $uploadGone)
     {
-        $gone = new S3Exception('The specified upload does not exist.', new Command('AbortMultipartUpload'), [
-            'code' => 'NoSuchUpload',
-            'response' => new Response(404),
+        $failure = new \Exception('storage unavailable');
+        if ($uploadGone) {
+            $failure = new S3Exception('The specified upload does not exist.', new Command('AbortMultipartUpload'), [
+                'code' => 'NoSuchUpload',
+                'response' => new Response(404),
+            ]);
+        }
+
+        $server = $this->createServerModel();
+        $backup = $this->createUnfinishedUpload($server->id);
+
+        $this->daemonServerRepository->expects('setServer->delete')->withNoArgs()->andReturnUndefined();
+
+        $adapter = $this->mockObjectStorage();
+        $adapter->expects('getClient->abortMultipartUpload')->andThrows($failure);
+        $adapter->expects('getClient->deleteObject')->with([
+            'Bucket' => 'foobar',
+            'Key' => sprintf('%s/%s.tar.gz', $server->uuid, $backup->uuid),
         ]);
 
-        foreach ([$gone, new \Exception('storage unavailable')] as $failure) {
-            $server = $this->createServerModel();
-            $backup = $this->createUnfinishedUpload($server->id);
+        $this->getService()->handle($server);
 
-            $this->daemonServerRepository->expects('setServer->delete')->withNoArgs()->andReturnUndefined();
+        $this->assertDatabaseMissing('servers', ['id' => $server->id]);
+        $this->assertDatabaseMissing('backups', ['id' => $backup->id]);
+    }
 
-            $adapter = $this->mockObjectStorage();
-            $adapter->expects('getClient->abortMultipartUpload')->andThrows($failure);
-            $adapter->expects('getClient->deleteObject')->with([
-                'Bucket' => 'foobar',
-                'Key' => sprintf('%s/%s.tar.gz', $server->uuid, $backup->uuid),
-            ]);
-
-            $this->getService()->handle($server);
-
-            $this->assertDatabaseMissing('servers', ['id' => $server->id]);
-        }
+    public static function abortFailureDataProvider(): array
+    {
+        return [
+            'the upload is already gone' => [true],
+            'object storage fails otherwise' => [false],
+        ];
     }
 
     /**
