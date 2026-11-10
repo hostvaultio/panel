@@ -5,9 +5,11 @@ namespace Pterodactyl\Services\Servers;
 use Illuminate\Http\Response;
 use Pterodactyl\Models\Backup;
 use Pterodactyl\Models\Server;
+use Aws\S3\Exception\S3Exception;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Database\ConnectionInterface;
 use Pterodactyl\Extensions\Backups\BackupManager;
+use Pterodactyl\Extensions\Filesystem\S3Filesystem;
 use Pterodactyl\Repositories\Wings\DaemonServerRepository;
 use Pterodactyl\Services\Databases\DatabaseManagementService;
 use Pterodactyl\Exceptions\Http\Connection\DaemonConnectionException;
@@ -60,11 +62,6 @@ class ServerDeletionService
             Log::warning($exception);
         }
 
-        // The archives go only once the server itself is gone from Wings: if that step fails,
-        // the server keeps its recovery points. A failure here leaves the server record in
-        // place, and a repeated delete resumes from this point.
-        $this->deleteBackupArchives($server);
-
         $this->connection->transaction(function () use ($server) {
             foreach ($server->databases as $database) {
                 try {
@@ -88,10 +85,15 @@ class ServerDeletionService
 
             // clear any allocation notes for the server
             $server->allocations()->update(['notes' => null]);
-
-
-            $server->delete();
         });
+
+        // The archives go last, so a failure above leaves the server's recovery points alone.
+        // They are removed outside the transaction above because each archive is committed
+        // with its own record: a failure part-way leaves no record pointing at a missing
+        // object, and a repeated delete resumes with what is left.
+        $this->deleteBackupArchives($server);
+
+        $server->delete();
     }
 
     /**
@@ -117,7 +119,7 @@ class ServerDeletionService
 
             try {
                 $this->deleteArchive($backup, $key);
-            } catch (\Exception $exception) {
+            } catch (\Throwable $exception) {
                 if (!$this->force) {
                     throw $exception;
                 }
@@ -133,30 +135,50 @@ class ServerDeletionService
     }
 
     /**
-     * Delete one archive from S3-compatible storage, aborting its upload first when the backup
-     * never completed.
+     * Delete one archive and its record together, as when a single backup is deleted: if the
+     * object cannot be removed the record stays, and once it is removed nothing lists it.
      *
      * @throws \Throwable
      */
     private function deleteArchive(Backup $backup, string $key): void
     {
-        /** @var \Pterodactyl\Extensions\Filesystem\S3Filesystem $adapter */
+        /** @var S3Filesystem $adapter */
         $adapter = $this->backupManager->adapter(Backup::ADAPTER_AWS_S3);
         $object = ['Bucket' => $adapter->getBucket(), 'Key' => $key];
 
-        // An upload still in progress has parts in the bucket but no object yet. Abort it so the
-        // parts are not left behind. A stale record whose upload already expired must not block
-        // the deletion, so a failed abort is only logged.
-        if (is_null($backup->completed_at) && !empty($backup->upload_id)) {
-            try {
-                // @phpstan-ignore-next-line method.notFound
-                $adapter->getClient()->abortMultipartUpload($object + ['UploadId' => $backup->upload_id]);
-            } catch (\Exception $exception) {
-                Log::warning($exception);
-            }
+        // A backup that never succeeded can have uploaded parts and no object. That covers an
+        // upload still running and one the stale-backup pruner marked as failed.
+        if (!$backup->is_successful && !empty($backup->upload_id)) {
+            $this->abortUpload($adapter, $object + ['UploadId' => $backup->upload_id]);
         }
 
-        // @phpstan-ignore-next-line method.notFound
-        $adapter->getClient()->deleteObject($object);
+        $this->connection->transaction(function () use ($backup, $adapter, $object) {
+            $backup->delete();
+
+            // @phpstan-ignore-next-line method.notFound
+            $adapter->getClient()->deleteObject($object);
+        });
+    }
+
+    /**
+     * Abort a multipart upload so its parts are not left in the bucket. This never stops the
+     * deletion: leftover parts are not a reason to keep a server, and a failed backup whose
+     * upload was already aborted or has expired answers 404, which is the expected case.
+     */
+    private function abortUpload(S3Filesystem $adapter, array $upload): void
+    {
+        try {
+            // @phpstan-ignore-next-line method.notFound
+            $adapter->getClient()->abortMultipartUpload($upload);
+        } catch (\Throwable $exception) {
+            if ($exception instanceof S3Exception && $exception->getStatusCode() === Response::HTTP_NOT_FOUND) {
+                return;
+            }
+
+            Log::warning('Could not abort an unfinished backup upload while deleting its server.', [
+                'key' => $upload['Key'],
+                'exception' => $exception->getMessage(),
+            ]);
+        }
     }
 }
