@@ -223,8 +223,11 @@ class BillingSuspensionControllerTest extends IntegrationTestCase
         $repository = $this->mock(DaemonServerRepository::class);
         $repository->shouldReceive('setServer')->once()->andReturnSelf();
         $repository->shouldReceive('sync')->once()->andReturnUsing(function () use ($pdo, $sql, $bindings) {
-            $this->assertSame(Server::STATUS_SUSPENDED, $pdo->query("SELECT status FROM servers WHERE id = {$this->server->id}")->fetchColumn(),
-                'The configuration callback must see the committed desired status during sync.');
+            $this->assertSame(
+                Server::STATUS_SUSPENDED,
+                $pdo->query("SELECT status FROM servers WHERE id = {$this->server->id}")->fetchColumn(),
+                'The configuration callback must see the committed desired status during sync.'
+            );
             try {
                 $pdo->prepare($sql)->execute($bindings);
                 $this->fail('A binding changed while Wings was syncing.');

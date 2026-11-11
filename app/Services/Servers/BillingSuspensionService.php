@@ -56,20 +56,26 @@ class BillingSuspensionService
 
             $subscription = $this->connection->table('subscriptions')
                 ->where('stripe_subscription_id', $expected['expected_subscription_id'])->sharedLock()->first();
-            abort_unless($subscription
+            abort_unless(
+                $subscription
                 && $subscription->stripe_subscription_id === $expected['expected_subscription_id']
                 && $subscription->stripe_customer_id === $expected['expected_customer_id']
                 && $subscription->status === $expected['expected_subscription_status']
                 && (bool) $subscription->cancel_at_period_end === (bool) $expected['expected_cancel_at_period_end'],
-                409, 'Billing subscription identity changed.');
+                409,
+                'Billing subscription identity changed.'
+            );
 
             $customer = $this->connection->table('billing_customers')
                 ->where('stripe_customer_id', $subscription->stripe_customer_id)->sharedLock()->first();
             // A real customer row is required so its identity remains locked through sync.
-            abort_unless($customer && $customer->stripe_customer_id === $subscription->stripe_customer_id
+            abort_unless(
+                $customer && $customer->stripe_customer_id === $subscription->stripe_customer_id
                 && (int) $customer->pterodactyl_user_id === $owner
                 && ($subscription->pterodactyl_user_id === null || (int) $subscription->pterodactyl_user_id === $owner),
-                409, 'Billing customer identity changed.');
+                409,
+                'Billing customer identity changed.'
+            );
 
             $action = $expected['action'];
             abort_unless(in_array($tracking->server_status, ['active', 'suspended', 'pending_deletion'], true), 409);
