@@ -21,10 +21,15 @@ class BillingSuspensionControllerTest extends IntegrationTestCase
 
     private array $expected;
 
+    private array $startingIds = [];
+
     public function setUp(): void
     {
         parent::setUp();
         Notification::fake();
+        foreach (['servers', 'allocations', 'nodes', 'locations', 'api_keys', 'users'] as $table) {
+            $this->startingIds[$table] = (int) DB::table($table)->max('id');
+        }
         // These platform-owned tables are absent from Panel migrations. This
         // suite owns their fixture schema, never a live application database.
         foreach (['user_servers', 'subscriptions', 'billing_customers'] as $name) {
@@ -67,6 +72,11 @@ class BillingSuspensionControllerTest extends IntegrationTestCase
     {
         foreach (['user_servers', 'subscriptions', 'billing_customers'] as $name) {
             Schema::dropIfExists($name);
+        }
+        // This suite deliberately commits rows for independent PDO visibility.
+        // Remove only rows it created, in FK order, before the next API suite.
+        foreach ($this->startingIds as $table => $lastId) {
+            DB::table($table)->where('id', '>', $lastId)->delete();
         }
         parent::tearDown();
     }
@@ -180,11 +190,16 @@ class BillingSuspensionControllerTest extends IntegrationTestCase
         $this->postJson($this->path(), $this->expected)->assertStatus(409);
     }
 
-    public function testGuardFieldsAndApplicationWritePermissionAreMandatory(): void
+    public function testGuardFieldsAreMandatory(): void
     {
         $this->noWings();
         $this->postJson($this->path(), [])->assertStatus(422);
+    }
+
+    public function testApplicationWritePermissionIsMandatory(): void
+    {
         $this->key(AdminAcl::READ);
+        $this->noWings();
         $this->postJson($this->path(), $this->expected)->assertForbidden();
     }
 
