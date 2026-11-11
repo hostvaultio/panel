@@ -2,6 +2,7 @@
 
 namespace Pterodactyl\Services\Servers;
 
+use Webmozart\Assert\Assert;
 use Pterodactyl\Models\Server;
 use Illuminate\Database\ConnectionInterface;
 use Pterodactyl\Repositories\Wings\DaemonServerRepository;
@@ -17,6 +18,7 @@ class BillingSuspensionService
 
     public function handle(Server $server, array $expected): void
     {
+        Assert::oneOf($expected['action'], [SuspensionService::ACTION_SUSPEND, SuspensionService::ACTION_UNSUSPEND]);
         $status = $expected['action'] === SuspensionService::ACTION_SUSPEND ? Server::STATUS_SUSPENDED : null;
         // Wings fetches configuration over a separate Panel request. Commit the
         // desired status first so that request cannot read the old status.

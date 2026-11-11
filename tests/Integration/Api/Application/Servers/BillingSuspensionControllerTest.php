@@ -194,6 +194,7 @@ class BillingSuspensionControllerTest extends IntegrationTestCase
     {
         $this->noWings();
         $this->postJson($this->path(), [])->assertStatus(422);
+        $this->postJson($this->path(), array_replace($this->expected, ['action' => 'invalid']))->assertStatus(422);
     }
 
     public function testApplicationWritePermissionIsMandatory(): void
