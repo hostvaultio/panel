@@ -105,6 +105,7 @@ Route::group(['prefix' => '/servers'], function () {
     Route::post('/', [Application\Servers\ServerController::class, 'store']);
     Route::post('/{server:id}/suspend', [Application\Servers\ServerManagementController::class, 'suspend'])->name('api.application.servers.suspend');
     Route::post('/{server:id}/unsuspend', [Application\Servers\ServerManagementController::class, 'unsuspend'])->name('api.application.servers.unsuspend');
+    Route::post('/{server:id}/billing-suspension', [Application\Servers\BillingSuspensionController::class, 'store']);
     Route::post('/{server:id}/reinstall', [Application\Servers\ServerManagementController::class, 'reinstall'])->name('api.application.servers.reinstall');
 
     Route::delete('/{server:id}', [Application\Servers\ServerController::class, 'delete']);
