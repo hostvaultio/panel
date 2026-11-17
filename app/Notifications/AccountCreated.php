@@ -13,6 +13,14 @@ class AccountCreated extends Notification implements ShouldQueue
     use Queueable;
 
     /**
+     * Discard the queued notification when its user no longer exists, rather than recording
+     * a failed job. An account can be deleted before the worker reaches this notification,
+     * and then there is nobody left to tell. Laravel reads this default from the notification
+     * class that the queued job names.
+     */
+    public bool $deleteWhenMissingModels = true;
+
+    /**
      * Create a new notification instance.
      */
     public function __construct(public User $user, public ?string $token = null)
