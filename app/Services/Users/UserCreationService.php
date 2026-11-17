@@ -52,7 +52,7 @@ class UserCreationService
         }
 
         $this->connection->commit();
-        $user->notify(new AccountCreated($user, $token ?? null));
+        $user->notify(new AccountCreated($token ?? null));
 
         Activity::event('user:user.create')
             ->subject($user)
