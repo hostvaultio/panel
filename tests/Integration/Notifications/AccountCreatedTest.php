@@ -31,10 +31,10 @@ class AccountCreatedTest extends IntegrationTestCase
         $this->assertSame(1, DB::table('jobs')->count());
 
         $user->delete();
-        Artisan::call('queue:work', ['connection' => 'database', '--once' => true]);
+        $worker = $this->runWorkerOnce();
 
-        $this->assertSame(0, DB::table('jobs')->count());
-        $this->assertSame(0, DB::table('failed_jobs')->count());
+        $this->assertSame(0, DB::table('jobs')->count(), $worker);
+        $this->assertSame(0, DB::table('failed_jobs')->count(), $worker);
     }
 
     /**
@@ -49,10 +49,27 @@ class AccountCreatedTest extends IntegrationTestCase
         $this->assertSame(1, DB::table('jobs')->count());
 
         $user->delete();
-        Artisan::call('queue:work', ['connection' => 'database', '--once' => true]);
+        $worker = $this->runWorkerOnce();
 
-        $this->assertSame(0, DB::table('jobs')->count());
-        $this->assertSame(1, DB::table('failed_jobs')->count());
+        $this->assertSame(0, DB::table('jobs')->count(), $worker);
+        $this->assertSame(1, DB::table('failed_jobs')->count(), $worker);
         $this->assertStringContainsString('ModelNotFoundException', DB::table('failed_jobs')->value('exception'));
+    }
+
+    /**
+     * Let the queue worker take one job from the database queue. Returns what the worker
+     * printed and what is left in the queue, which an assertion shows when it fails.
+     */
+    private function runWorkerOnce(): string
+    {
+        $exit = Artisan::call('queue:work', ['connection' => 'database', '--once' => true, '--sleep' => 0]);
+
+        return sprintf(
+            "queue:work exited %d and printed:\n%s\njobs left: %s\nnow: %d",
+            $exit,
+            Artisan::output(),
+            DB::table('jobs')->get(['id', 'queue', 'attempts', 'reserved_at', 'available_at'])->toJson(),
+            now()->getTimestamp(),
+        );
     }
 }
